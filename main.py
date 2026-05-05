@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 import uvicorn
 from orchestrator import LangGraphOrchestrator
+from config import settings
 
 
 app = FastAPI(
@@ -77,7 +78,7 @@ async def query(request: QueryRequest):
         QueryResponse with agent response
     """
     try:
-        result = orchestrator.invoke(request.query)
+        result = orchestrator.invoke(request.query, workspace_path=settings.workspace_path)
         
         agent_response = result.get("agent_response", {})
         verification = agent_response.get("verification", {}) or result.get("critic_verification", {})
@@ -97,6 +98,17 @@ async def query(request: QueryRequest):
                     "suggestions": verification.get("suggestions", ""),
                 },
                 "all_responses": len(result.get("all_responses", [])),
+                "pipeline_trace": result.get("pipeline_trace", []),
+                "workspace_path": result.get("workspace_path", settings.workspace_path),
+                "architecture_output": result.get("architecture_output", {}).get("response", ""),
+                "coding_output": result.get("coding_output", {}).get("response", ""),
+                "testing_output": result.get("testing_output", {}).get("response", ""),
+                "coding_run_id": result.get("coding_output", {}).get("sdk_run_id"),
+                "testing_run_id": result.get("testing_output", {}).get("sdk_run_id"),
+                "sdk_status": {
+                    "coding": result.get("coding_output", {}).get("sdk_status", "unknown"),
+                    "testing": result.get("testing_output", {}).get("sdk_status", "unknown"),
+                },
             }
         )
     except Exception as e:

@@ -21,6 +21,17 @@ class Settings(BaseSettings):
     # Agent configurations
     max_iterations: int = 10
     temperature: float = 0.7
+    workspace_path: str = "/workspace"
+
+    # OpenHands integration
+    openhands_api_key: Optional[str] = None
+    openhands_model: str = "openhands/claude-sonnet-4-5-20250929"
+    openhands_llm_base_url: Optional[str] = None
+    openhands_timeout_seconds: int = 180
+
+    # Tester configuration
+    tester_command: str = "pytest -q"
+    tester_timeout_seconds: int = 180
     
     class Config:
         env_file = ".env"

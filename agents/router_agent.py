@@ -24,12 +24,9 @@ class RouterAgent:
         Returns:
             Dict with 'agent' (agent name) and 'reasoning' (explanation)
         """
-        system_prompt = """You are a routing agent. Analyze the user's query and determine
-which specialized agent should handle it. Available agents:
-- text_reasoning: For complex reasoning, analysis, problem-solving
-- tool: For tasks requiring external tools (web search, calculations, APIs)
-
-Respond with ONLY the agent name (one of: text_reasoning, tool)."""
+        system_prompt = """You are a routing agent for a fixed software-delivery pipeline.
+The pipeline always starts with architect, then coding, then tester.
+Return ONLY one word: architect."""
 
         completion = self.client.chat.completions.create(
             model=settings.default_llm_model,
@@ -40,15 +37,8 @@ Respond with ONLY the agent name (one of: text_reasoning, tool)."""
             ],
         )
         agent_name = (completion.choices[0].message.content or "").strip().lower()
-        
-        # Validate and default
-        valid_agents = ["text_reasoning", "tool"]
-        if agent_name not in valid_agents:
-            # Default routing logic
-            if any(keyword in query.lower() for keyword in ["search", "find", "lookup", "current"]):
-                agent_name = "tool"
-            else:
-                agent_name = "text_reasoning"
+        if agent_name != "architect":
+            agent_name = "architect"
         
         return {
             "agent": agent_name,

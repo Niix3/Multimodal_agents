@@ -1,6 +1,6 @@
 # Multi-Agent System with LangGraph
 
-Упрощённая архитектура системы мультиагентов на базе LangGraph (текстовые запросы + инструменты).
+Система мультиагентов на базе LangGraph с pipeline `architect -> coding(OpenHands) -> tester`.
 
 ## Архитектура
 
@@ -11,10 +11,9 @@ API Gateway (FastAPI)
  ↓
 LangGraph Orchestrator
  ├── Router Agent
- │
- ├── Text Reasoning Agent
- ├── Tool Agent
- │
+ ├── Architect Agent
+ ├── Coding Agent (OpenHands)
+ ├── Tester Agent
  └── Critic / Verifier Agent
  ↓
 Response Aggregation
@@ -38,15 +37,17 @@ User
 #### Router Agent
 - Анализирует запрос и определяет подходящего агента
 
-#### Text Reasoning Agent
-- Сложные рассуждения и анализ
-- Пошаговое решение проблем
+#### Architect Agent
+- Формирует архитектурный план реализации
+- Определяет ограничения и шаги для coding stage
 
-#### Tool Agent
-- Выполнение внешних инструментов
-- Web search
-- Python execution (с guardrails)
-- Интеграция с API
+#### Coding Agent (OpenHands)
+- Выполняет кодинг-задачу через OpenHands Python SDK (in-process)
+- Работает в общей директории через Docker volume
+
+#### Tester Agent
+- Запускает тестовый сценарий через OpenHands Python SDK (по умолчанию `pytest -q`)
+- Проверяет изменения в той же общей директории
 
 #### Critic/Verifier Agent
 - Проверка качества ответов
@@ -67,32 +68,33 @@ User
 
 1. Клонируйте репозиторий или создайте проект
 
-2. Установите зависимости:
+2. Создайте файл `.env`:
 ```bash
-pip install -r requirements.txt
-```
-
-3. Создайте файл `.env` на основе `.env.example`:
-```bash
-cp .env.example .env
-```
-
-4. Заполните `.env` файл с вашими API ключами:
-```
 OPENAI_API_KEY=your_key_here
+OPENAI_BASE_URL=https://api.aitunnel.ru/v1/
+DEFAULT_LLM_MODEL=gpt-4-turbo-preview
+WORKSPACE_PATH=/workspace
+OPENHANDS_API_KEY=your_openhands_or_llm_key
+OPENHANDS_MODEL=openhands/claude-sonnet-4-5-20250929
+OPENHANDS_LLM_BASE_URL=
+TESTER_COMMAND=pytest -q
 ```
 
-5. (Опционально) Настройте векторную базу данных:
-   - Для Qdrant: установите и запустите Qdrant
-   - Для Neo4j: установите и запустите Neo4j
+3. Запустите систему в Docker:
+```bash
+docker compose up --build
+```
 
 ## Запуск
 
+Локально без Docker (опционально):
+
 ```bash
+pip install -r requirements.txt
 python main.py
 ```
 
-API будет доступен по адресу: `http://localhost:8000`
+По умолчанию API доступен по адресу: `http://localhost:8000`
 
 Документация API: `http://localhost:8000/docs`
 
@@ -105,12 +107,6 @@ curl -X POST "http://localhost:8000/query" \
   -H "Content-Type: application/json" \
   -d '{"query": "What is the capital of France?"}'
 ```
-
-### Мультимодальный запрос
-В упрощённой версии не поддерживается.
-
-### Добавление документов в RAG
-В упрощённой версии не поддерживается.
 
 ## Структура проекта
 
@@ -126,13 +122,17 @@ curl -X POST "http://localhost:8000/query" \
 ├── agents/                 # Все агенты
 │   ├── __init__.py
 │   ├── router_agent.py
-│   ├── text_reasoning_agent.py
+│   ├── architect_agent.py
+│   ├── coding_agent.py
+│   ├── tester_agent.py
 │   ├── tool_agent.py
 │   └── critic_agent.py
 ├── tools/                 # Внешние инструменты
 │   ├── __init__.py
 │   ├── web_search.py
 │   └── python_executor.py
+├── Dockerfile
+├── docker-compose.yml
 ├── requirements.txt
 └── README.md
 ```
@@ -143,9 +143,11 @@ curl -X POST "http://localhost:8000/query" \
 
 - `OPENAI_API_KEY`: API ключ OpenAI
 - `DEFAULT_LLM_MODEL`: Модель LLM по умолчанию
-- `ENABLE_WEB_SEARCH`: Включить web search
-- `ENABLE_PYTHON_EXEC`: Включить Python execution
-- `MAX_TOOL_CALLS`: Максимальное количество вызовов инструментов
+- `WORKSPACE_PATH`: путь к общей рабочей директории (volume)
+- `OPENHANDS_API_KEY`: ключ для OpenHands SDK (если пусто, используется `OPENAI_API_KEY`)
+- `OPENHANDS_MODEL`: модель для OpenHands SDK
+- `OPENHANDS_LLM_BASE_URL`: кастомный base URL для LLM провайдера (опционально)
+- `TESTER_COMMAND`: команда тестирования в shared workspace
 
 ## Расширение системы
 
@@ -153,7 +155,7 @@ curl -X POST "http://localhost:8000/query" \
 
 1. Создайте файл в `agents/` с классом агента
 2. Добавьте узел в `orchestrator/graph.py`
-3. Обновите router для маршрутизации к новому агенту
+3. Подключите узел в pipeline и экспортируйте агент в `agents/__init__.py`
 
 ### Добавление нового инструмента
 

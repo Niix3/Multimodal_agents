@@ -1,0 +1,19 @@
+version: "3.9"
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: agentic_api
+    env_file:
+      - .env
+    environment:
+      WORKSPACE_PATH: /workspace
+    ports:
+      - "8000:8000"
+    volumes:
+      - workspace_data:/workspace
+
+volumes:
+  workspace_data:

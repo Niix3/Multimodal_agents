@@ -2,28 +2,32 @@
 
 ## Быстрая установка и запуск
 
-### 1. Установка зависимостей
+### 1. Настройка окружения
 
 ```bash
-pip install -r requirements.txt
-```
-
-### 2. Настройка окружения
-
-Создайте файл `.env` в корне проекта:
-
-```env
 OPENAI_API_KEY=your_openai_api_key_here
 DEFAULT_LLM_MODEL=gpt-4-turbo-preview
+WORKSPACE_PATH=/workspace
+OPENHANDS_API_KEY=your_openhands_or_llm_key
+OPENHANDS_MODEL=openhands/claude-sonnet-4-5-20250929
+OPENHANDS_LLM_BASE_URL=
+TESTER_COMMAND=pytest -q
 ```
 
-### 3. Запуск сервера
+### 2. Запуск через Docker (рекомендуется)
 
 ```bash
-python main.py
+docker compose up --build
 ```
 
 Сервер запустится на `http://localhost:8000`
+
+### 3. Локальный запуск (опционально)
+
+```bash
+pip install -r requirements.txt
+python main.py
+```
 
 ### 4. Проверка работоспособности
 
@@ -45,10 +49,6 @@ curl -X POST "http://localhost:8000/query" \
   -d '{"query": "What is artificial intelligence?"}'
 ```
 
-#### Подсказка
-
-В упрощённой версии проекта доступны только текстовые запросы через `/query`.
-
 ### 6. Использование Python скрипта
 
 ```bash
@@ -58,23 +58,27 @@ python example_usage.py
 ## Архитектура потока выполнения
 
 1. **User** отправляет запрос через API Gateway
-2. **Router Agent** анализирует запрос и определяет подходящего агента
-3. Один из специализированных агентов обрабатывает запрос:
-   - **Text Reasoning Agent** - для сложных рассуждений
-   - **Tool Agent** - для выполнения внешних инструментов
-4. **Critic Agent** проверяет качество ответа
-5. **Aggregation** объединяет результаты
-6. **User** получает финальный ответ
+2. **Router Agent** направляет запрос в pipeline
+3. **Architect Agent** формирует план реализации
+4. **Coding Agent (OpenHands)** выполняет coding-этап в общей директории
+5. **Tester Agent** запускает тесты в той же общей директории
+6. **Critic Agent** проверяет качество ответа
+7. **Aggregation** объединяет результаты
+8. **User** получает финальный ответ
 
 ## Настройка компонентов
 
 
-### Инструменты
+### OpenHands SDK и shared workspace
 
-Отключить инструменты можно в `.env`:
+Все этапы coding/testing работают через общий Docker volume, смонтированный как `/workspace`.
+Настройка через `.env`:
 ```env
-ENABLE_WEB_SEARCH=false
-ENABLE_PYTHON_EXEC=false
+WORKSPACE_PATH=/workspace
+OPENHANDS_API_KEY=your_openhands_or_llm_key
+OPENHANDS_MODEL=openhands/claude-sonnet-4-5-20250929
+OPENHANDS_LLM_BASE_URL=
+TESTER_COMMAND=pytest -q
 ```
 
 ## Troubleshooting
@@ -94,8 +98,7 @@ pip install -r requirements.txt
 
 ## Следующие шаги
 
-1. Добавьте свои документы в RAG через API
-2. Настройте агентов под ваши задачи
-3. Расширьте систему новыми инструментами или агентами
-4. Настройте мониторинг и логирование
+1. Настройте агентов под ваши задачи
+2. Расширьте систему новыми инструментами или агентами
+3. Настройте мониторинг и логирование
 

@@ -1,13 +1,15 @@
 """LangGraph orchestrator for multi-agent system."""
-from typing import TypedDict, Annotated
+from typing import TypedDict, Annotated, Any
 import operator
 from langgraph.graph import StateGraph, END
 from agents import (
     RouterAgent,
-    TextReasoningAgent,
-    ToolAgent,
+    ArchitectAgent,
+    CodingAgent,
+    TesterAgent,
     CriticAgent
 )
+from config import settings
 
 
 class AgentState(TypedDict):
@@ -20,6 +22,11 @@ class AgentState(TypedDict):
     verified: bool
     critic_verification: dict
     iteration: int
+    workspace_path: str
+    architecture_output: dict
+    coding_output: dict
+    testing_output: dict
+    pipeline_trace: Annotated[list, operator.add]
 
 
 class LangGraphOrchestrator:
@@ -28,8 +35,9 @@ class LangGraphOrchestrator:
     def __init__(self):
         """Initialize orchestrator with all agents."""
         self.router = RouterAgent()
-        self.text_agent = TextReasoningAgent()
-        self.tool_agent = ToolAgent()
+        self.architect_agent = ArchitectAgent()
+        self.coding_agent = CodingAgent()
+        self.tester_agent = TesterAgent()
         self.critic = CriticAgent()
         
         # Build graph
@@ -42,27 +50,19 @@ class LangGraphOrchestrator:
         
         # Add nodes
         workflow.add_node("router", self._router_node)
-        workflow.add_node("text_reasoning", self._text_reasoning_node)
-        workflow.add_node("tool", self._tool_node)
+        workflow.add_node("architect", self._architect_node)
+        workflow.add_node("coding", self._coding_node)
+        workflow.add_node("tester", self._tester_node)
         workflow.add_node("critic", self._critic_node)
         workflow.add_node("aggregate", self._aggregate_node)
         
         # Set entry point
         workflow.set_entry_point("router")
         
-        # Add conditional edges from router
-        workflow.add_conditional_edges(
-            "router",
-            self._route_decision,
-            {
-                "text_reasoning": "text_reasoning",
-                "tool": "tool"
-            }
-        )
-        
-        # All agents go to critic
-        workflow.add_edge("text_reasoning", "critic")
-        workflow.add_edge("tool", "critic")
+        workflow.add_edge("router", "architect")
+        workflow.add_edge("architect", "coding")
+        workflow.add_edge("coding", "tester")
+        workflow.add_edge("tester", "critic")
         
         # Critic goes to aggregate
         workflow.add_edge("critic", "aggregate")
@@ -73,29 +73,77 @@ class LangGraphOrchestrator:
         return workflow
     
     def _router_node(self, state: AgentState) -> AgentState:
-        """Router node - determines which agent to use."""
+        """Router node - currently always starts pipeline with architect."""
         routing = self.router.route(
             state["query"]
         )
         return {
-            "routed_agent": routing["agent"]
+            "routed_agent": routing["agent"],
+            "pipeline_trace": [{"stage": "router", "decision": routing}],
         }
     
-    def _text_reasoning_node(self, state: AgentState) -> AgentState:
-        """Text reasoning agent node."""
-        context = state.get("agent_response", {}).get("response", "")
-        response = self.text_agent.reason(state["query"], context)
+    def _architect_node(self, state: AgentState) -> AgentState:
+        """Architect agent node."""
+        response = self.architect_agent.design(
+            query=state["query"],
+            workspace_path=state.get("workspace_path", settings.workspace_path),
+        )
         return {
+            "architecture_output": response,
             "agent_response": response,
-            "all_responses": [response]
+            "all_responses": [response],
+            "pipeline_trace": [
+                {
+                    "stage": "architect",
+                    "result": response.get("response", ""),
+                    "sdk_status": response.get("sdk_status", "n/a"),
+                    "sdk_run_id": response.get("sdk_run_id"),
+                }
+            ],
         }
     
-    def _tool_node(self, state: AgentState) -> AgentState:
-        """Tool agent node."""
-        response = self.tool_agent.execute(state["query"])
+    def _coding_node(self, state: AgentState) -> AgentState:
+        """Coding agent node (OpenHands integration)."""
+        architecture = state.get("architecture_output", {})
+        response = self.coding_agent.execute(
+            query=state["query"],
+            architecture_output=architecture,
+            workspace_path=state.get("workspace_path", settings.workspace_path),
+        )
         return {
+            "coding_output": response,
             "agent_response": response,
-            "all_responses": [response]
+            "all_responses": [response],
+            "pipeline_trace": [
+                {
+                    "stage": "coding",
+                    "result": response.get("response", ""),
+                    "sdk_status": response.get("sdk_status", "unknown"),
+                    "sdk_run_id": response.get("sdk_run_id"),
+                }
+            ],
+        }
+
+    def _tester_node(self, state: AgentState) -> AgentState:
+        """Tester agent node."""
+        coding_output = state.get("coding_output", {})
+        response = self.tester_agent.run_tests(
+            query=state["query"],
+            coding_output=coding_output,
+            workspace_path=state.get("workspace_path", settings.workspace_path),
+        )
+        return {
+            "testing_output": response,
+            "agent_response": response,
+            "all_responses": [response],
+            "pipeline_trace": [
+                {
+                    "stage": "tester",
+                    "result": response.get("response", ""),
+                    "sdk_status": response.get("sdk_status", "unknown"),
+                    "sdk_run_id": response.get("sdk_run_id"),
+                }
+            ],
         }
     
     def _critic_node(self, state: AgentState) -> AgentState:
@@ -128,11 +176,7 @@ class LangGraphOrchestrator:
             "agent_response": aggregated
         }
     
-    def _route_decision(self, state: AgentState) -> str:
-        """Decision function for routing."""
-        return state.get("routed_agent", "text_reasoning")
-    
-    def invoke(self, query: str) -> dict:
+    def invoke(self, query: str, workspace_path: str | None = None) -> dict[str, Any]:
         """
         Process a request through the orchestrator.
         
@@ -150,7 +194,12 @@ class LangGraphOrchestrator:
             "final_response": "",
             "verified": False,
             "critic_verification": {},
-            "iteration": 0
+            "iteration": 0,
+            "workspace_path": workspace_path or settings.workspace_path,
+            "architecture_output": {},
+            "coding_output": {},
+            "testing_output": {},
+            "pipeline_trace": [],
         }
         
         result = self.app.invoke(initial_state)
